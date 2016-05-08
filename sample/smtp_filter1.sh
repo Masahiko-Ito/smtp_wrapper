@@ -73,22 +73,20 @@ spam_check ()
         spam_exit 2 "unknown ip" # *** 送信ホストのIPが判らない ***
     fi
 #
-    for i in `cat ${black_ip_db} |\
-    	egrep -v '^#'`
+    for i in `egrep -v '^#' ${black_ip_db}`
     do
         black_ip=`echo "${from_ip}" |\
-    	egrep -i "$i"`
+    	egrep "$i"`
         if [ "X${black_ip}" != "X" ]
         then
             spam_exit 3 "black IP" # *** 送信ホストIPが黒IPデータベースに登録されている ***
         fi
     done
 #
-    for i in `cat ${white_ip_db} |\
-    	egrep -v '^#'`
+    for i in `egrep -v '^#' ${white_ip_db}`
     do
         white_ip=`echo "${from_ip}" |\
-    	egrep -i "$i"`
+    	egrep "$i"`
         if [ "X${white_ip}" != "X" ]
         then
             break;
@@ -96,7 +94,7 @@ spam_check ()
     done
 #
     from_hostname=`host ${from_ip} 2>/dev/null |\
-    	egrep -i 'domain name pointer' |\
+    	egrep 'domain name pointer' |\
     	head -1 |\
     	sed -e 's/^.* domain name pointer *//;s/\.$//'`
     if [ "X${white_ip}" = "X" -a "X${from_hostname}" = "X" ]
@@ -104,22 +102,20 @@ spam_check ()
         spam_exit 4 "no dns" # *** 送信ホストのIPが逆引きできない ***
     fi
 #
-    for i in `cat ${black_hostname_db} |\
-    	egrep -v '^#'`
+    for i in `egrep -v '^#' ${black_hostname_db}`
     do
         black_hostname=`echo "${from_hostname}" |\
-    	egrep -i "$i"`
+    	egrep "$i"`
         if [ "X${black_hostname}" != "X" ]
         then
             spam_exit 5 "black hostname" # *** 送信ホスト名が黒ホスト名データベースに登録されている ***
         fi
     done
 #
-    for i in `cat ${white_hostname_db} |\
-    	egrep -v '^#'`
+    for i in `egrep -v '^#' ${white_hostname_db}`
     do
         white_hostname=`echo "${from_hostname}" |\
-    	egrep -i "$i"`
+    	egrep "$i"`
         if [ "X${white_hostname}" != "X" ]
         then
             break;
@@ -130,42 +126,42 @@ spam_check ()
     then
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^[^\.]*[0-9][^0-9\.]+[0-9]'`
+        	egrep '^[^\.]*[0-9][^0-9\.]+[0-9]'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 6 "rule 1" # *** ［ルール1］　逆引きFQDNの最下位（左端）の名前が、数字以外の文字列で分断された二つ以上の数 ***
         fi
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^[^\.]*[0-9]{5}'`
+        	egrep '^[^\.]*[0-9]{5}'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 7 "rule 2" # *** ［ルール2］　逆引きFQDNの最下位の名前が、5個以上連続する数字を含む ***
         fi
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^([^\.]+\.)?[0-9][^\.]*\.[^\.]+\..+\.[a-z]'`
+        	egrep '^([^\.]+\.)?[0-9][^\.]*\.[^\.]+\..+\.[a-z]'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 8 "rule 3" # *** ［ルール3］　逆引きFQDNの上位3階層を除き、最下位または下位から2番目の名前が数字で始まる ***
         fi
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^[^\.]*[0-9]\.[^\.]*[0-9]-[0-9]'`
+        	egrep '^[^\.]*[0-9]\.[^\.]*[0-9]-[0-9]'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 9 "rule 4" # *** ［ルール4］　逆引きFQDNの最下位の名前が数字で終わり、かつ下位から2番目の名前が、1個のハイフンで分断された二つ以上の数字列を含む ***
         fi
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^[^\.]*[0-9]\.[^\.]*[0-9]\.[^\.]+\..+\.'`
+        	egrep '^[^\.]*[0-9]\.[^\.]*[0-9]\.[^\.]+\..+\.'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 10 "rule 5" # *** ［ルール5］　逆引きFQDNが5階層以上で、下位2階層の名前がともに数字で終わる ***
         fi
 #
         spam_host=`echo ${from_hostname} |\
-        	egrep -i '^(dhcp|dialup|ppp|adsl)[^\.]*[0-9]'`
+        	egrep '^(dhcp|dialup|ppp|adsl)[^\.]*[0-9]'`
         if [ "X${spam_host}" != "X" ]
         then
             spam_exit 11 "rule 6" # *** ［ルール6］　逆引きFQDNの最下位の名前が「dhcp」、「dialup」、「ppp」、または「adsl」で始まり、かつ数字を含む ***

@@ -18,3 +18,11 @@
    外部MTAからの接続要求時点でIPアドレスを元にチェックを行うフィルタと、コンテンツ受信完了後にコンテン
    ツ内容を元にチェックを行うフィルタの2種類を指定できる。従来通り(Ver. 0.2.x以前と同様に)全てのフィル
    タリングを1つのフィルタで行うことも可能。
+2006/10/02 Ver. 0.4
+ o smtp_filter*.shの効率化。
+ o -nsc オプション(no sequence check)追加。
+ o ip_filter実行中にクライアントからの通信が切れた場合、ip_filterを直ちに終了するように修正。
+   S25Rに該当するMTAに対して遅延(sleep)をかけるようなスクリプトを効率良く運用できるようになります。
+   参考 : - Starpitでほぼ誤検出無く98%のスパムを排除 (S25R+tarpittingによるスパム対策)
+            http://d.hatena.ne.jp/stealthinu/20060706/p5
+          - sample/smtp_filter1_starpit.sh

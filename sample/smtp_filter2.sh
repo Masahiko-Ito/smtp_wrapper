@@ -51,9 +51,9 @@ spam_exit ()
 {
     if [ -r ${tmp}/smtp_filter2.*.$$.tmp ]
     then
-        logger -p mail.info -t ${sl_ident} "[$$]:`cat ${tmp}/smtp_filter2.*.$$.tmp | head -50 | egrep -i '^MAIL *FROM:|^RCPT *TO:|^From:|^To:|^Subject:|^Date:'`"
+        logger -p mail.info -t ${sl_ident} "[$$]:`head -50 ${tmp}/smtp_filter2.*.$$.tmp | egrep -i '^MAIL *FROM:|^RCPT *TO:|^From:|^To:|^Subject:|^Date:'`"
     else
-        logger -p mail.info -t ${sl_ident} "[$$]:`cat | head -50 | egrep -i '^MAIL *FROM:|^RCPT *TO:|^From:|^To:|^Subject:|^Date:'`"
+        logger -p mail.info -t ${sl_ident} "[$$]:`head -50 | egrep -i '^MAIL *FROM:|^RCPT *TO:|^From:|^To:|^Subject:|^Date:'`"
     fi
     logger -p mail.info -t ${sl_ident} "[$$]:IP=${from_ip}"
     logger -p mail.info -t ${sl_ident} "[$$]:HOST=${from_hostname}"
@@ -70,10 +70,7 @@ spam_exit ()
 relay_check ()
 {
 	allow_ip=""
-	for i in `cat ${relay_allow_host} |\
-		grep -v '^#' |\
-		sed -e "s/${tab}/ /g;s/  */ /g" |\
-		cut -d ' ' -f 1`
+	for i in `grep -v '^#' ${relay_allow_host}`
 	do
 		allow_ip=`echo ${from_ip} |\
 			egrep "$i"`
@@ -85,8 +82,7 @@ relay_check ()
 #
 	if [ "X${allow_ip}" = "X" ]
 	then
-		for i in `cat ${tmp}/smtp_filter2.1.$$.tmp |\
-			awk 'BEGIN{
+		for i in `awk 'BEGIN{
 				cr = ENVIRON["cr"]
 			}
 			{
@@ -95,12 +91,11 @@ relay_check ()
 				}else{
 					print;
 				}
-			}' |\
+			}' ${tmp}/smtp_filter2.1.$$.tmp |\
 			egrep -i '^RCPT *TO:' |\
 			sed -e 's/ *//g`
 		do
-			for j in `cat ${relay_allow_address} |\
-				grep -v '^#'`
+			for j in `grep -v '^#' ${relay_allow_address}`
 			do
 				allow_rcpt=""
 				allow_rcpt=`echo $i |\
@@ -135,7 +130,7 @@ cat >${tmp}/smtp_filter2.1.$$.tmp
 #
 from_ip=${SW_FROM_IP}
 from_hostname=`host ${from_ip} 2>/dev/null |\
-	egrep -i 'domain name pointer' |\
+	egrep 'domain name pointer' |\
 	head -1 |\
 	sed -e 's/^.* domain name pointer *//;s/\.$//'`
 #
@@ -148,7 +143,6 @@ relay_check
 export from_ip
 export from_hostname
 #
-cat ${tmp}/smtp_filter2.1.$$.tmp |\
 awk 'BEGIN{
     from_ip = ENVIRON["from_ip"]
     from_hostname = ENVIRON["from_hostname"]
@@ -172,7 +166,7 @@ END{
     if (out_sw == 0){
         printf("[%d]:IP=%-s HOST=%-s REASON=NOT spam, but NO DATA\n", pid, from_ip, from_hostname)
     }
-}'
+}' ${tmp}/smtp_filter2.1.$$.tmp
 #
 #============================================================
 #

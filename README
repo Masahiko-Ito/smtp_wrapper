@@ -1,4 +1,4 @@
-smtp_wrapper-0.3 -- SMTP filtering support daemon
+smtp_wrapper-0.4 -- SMTP filtering support daemon
 Copyright (C) 2006  Masahiko Ito
 
 These programs is free software; you can redistribute it and/or modify
@@ -25,6 +25,7 @@ History
 2006/01/23 Ver. 0.1 release (1st)
 2006/05/15 Ver. 0.2 release
 2006/05/24 Ver. 0.3 release
+2006/10/02 Ver. 0.4 release
 
 What's this ?
 =============
@@ -93,8 +94,8 @@ Install
 =======
 
 o cd /usr/local/
-o tar xvzf smtp_wrapper-0.3.tar.gz
-o ln -sf smtp_wrapper-0.3 smtp_wrapper
+o tar xvzf smtp_wrapper-0.4.tar.gz
+o ln -sf smtp_wrapper-0.4 smtp_wrapper
 o cd smtp_wrapper
 o cc -o smtp_wrapper smtp_wrapper.c
 o vi smtp_filter1.sh # フィルタは各自で用意して下さい(for ip_filter)
@@ -118,6 +119,7 @@ o smtp_wrapper -h
     -f  contents_filter      : filter program for contents check [/usr/local/smtp_wrapper/smtp_contents_filter]
     -cm child_max            : max number of connection to real smtp daemon [10]
     -i  minimum_interval_sec : minimum interval second of connection from same ip address [0]
+    -nsc                     : no sequence error check
     -F                       : run in foreground
 
 sendmailの設定
@@ -212,6 +214,13 @@ Figure
     フィルタプログラムには、正当な接続に対しては`OK'または`ok'または`'(空
     文字列)を標準出力に出力させ、不正な接続に対しては`OK',`ok'以外のメッセー
     ジを標準出力に出力させ、終了させます。
+
+    フィルタプログラム実行中に接続元からの通信が切断された場合、フィルタプ
+    ログラムの終了を待たず、直ちにsmtp_wrapper(子)に制御が戻ります。S25Rに
+    該当するMTAに対して遅延(sleep)をかけるようなスクリプトを効率良く運用で
+    きるようになります。
+      参考 : Starpitでほぼ誤検出無く98%のスパムを排除 (S25R+tarpittingによるスパム対策)
+      http://d.hatena.ne.jp/stealthinu/20060706/p5
 
   o smtp_wrapper(子)はフィルタプログラムからのメッセージが`OK',`ok'以外の
     文字列で始まっていた場合、それを不正な接続とみなし、接続元に`450'で始
