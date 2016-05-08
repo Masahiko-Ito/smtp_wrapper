@@ -1,4 +1,4 @@
-smtp_wrapper-0.4 -- SMTP filtering support daemon
+smtp_wrapper-0.5 -- SMTP filtering support daemon
 Copyright (C) 2006  Masahiko Ito
 
 These programs is free software; you can redistribute it and/or modify
@@ -26,6 +26,7 @@ History
 2006/05/15 Ver. 0.2 release
 2006/05/24 Ver. 0.3 release
 2006/10/02 Ver. 0.4 release
+2007/??/?? Ver. 0.5 release
 
 What's this ?
 =============
@@ -94,8 +95,8 @@ Install
 =======
 
 o cd /usr/local/
-o tar xvzf smtp_wrapper-0.4.tar.gz
-o ln -sf smtp_wrapper-0.4 smtp_wrapper
+o tar xvzf smtp_wrapper-0.5.tar.gz
+o ln -sf smtp_wrapper-0.5 smtp_wrapper
 o cd smtp_wrapper
 o cc -o smtp_wrapper smtp_wrapper.c
 o vi smtp_filter1.sh # フィルタは各自で用意して下さい(for ip_filter)
@@ -400,3 +401,14 @@ o fetchmailで取り込むメールを重複して受信することがあるようで
   fetchmailを使って(個人で)取り込むメールのspam対策は、procmail
   と上述のフィルタの応用版、もしくはベイズ系フィルタとの組合せ
   でもって、クライアント側で対応するのが吉かと...。 
+
+o sampleディレクトリ以下のスクリプトに関してはセキュリティに甘
+  い部分があります。一時ファイルを無頓着に/tmpや/var/tmpに作成
+  しているので、root以外のユーザによるシンボリックリンク攻撃に
+  さらされる可能性があります。運用するサーバのローカルユーザが
+  実質的にrootしか存在しない場合は、問題にならないと思いますが、
+  あまり褒められたものではありません :<
+
+  その辺り、本番運用で利用される場合はくれぐれも御自身で検討し、
+  必要な修正を施した上で利用してください。
+  

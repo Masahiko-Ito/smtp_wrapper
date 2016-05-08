@@ -23,6 +23,12 @@ PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:
 export PATH
 #============================================================
 #
+# timeout (This was bad idea :<)
+#
+#timeout=10m
+#(sleep ${timeout}; kill -15 ${PPID}) &
+#============================================================
+#
 # smtp_wrapperディレクトリ指定
 #
 smtp_wrapper_dir="/usr/local/smtp_wrapper"
@@ -64,7 +70,12 @@ spam_exit ()
     logger -p mail.info -t ${sl_ident} "[$$]:HOST=${from_hostname}"
     logger -p mail.info -t ${sl_ident} "[$$]:EXIT=$1"
     logger -p mail.info -t ${sl_ident} "[$$]:REASON=$2"
-    sleep ${delay}
+    if [ "X$1" = "X3" -o "X$1" = "X5" ]
+    then
+        echo "NG: Black list ( $1 )"
+    else
+        sleep ${delay}
+    fi
     rm -f ${tmp}/smtp_filter1_starpit.*.$$.tmp
     exit $1
 }

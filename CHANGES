@@ -26,3 +26,10 @@
    参考 : - Starpitでほぼ誤検出無く98%のスパムを排除 (S25R+tarpittingによるスパム対策)
             http://d.hatena.ne.jp/stealthinu/20060706/p5
           - sample/smtp_filter1_starpit.sh
+20??/??/?? Ver. 0.5
+ o 制御端末の切り離し部分修正。
+ o sampleディレクトリ以下のスクリプトに関するセキュリティ上(一時ディレクトリの扱い等)の注意点をREADMEに追加。
+ o read()に対してもtimeoutの設定が有効となるように修正。
+ o write()に対してもtimeoutの設定が有効となるように修正。
+ o SigTrap()の先頭にsignal(sig, SIG_IGN)を追加。
+ o EHLO に対しては `504'を返していたのを、`502'を返すように修正(Thunderbird対応)

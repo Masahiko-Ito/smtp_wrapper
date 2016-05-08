@@ -7,6 +7,7 @@
 # ex. cat /var/log/maillog | show_retry1.sh
 #
 PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"; export PATH
+tmp="/tmp"
 #----------------------------------------------------------------- 
 #
 # 当日中の、完全に全てのアクセスを拒否されているIPの内、
@@ -31,33 +32,33 @@ date=`date +'%b %d' | sed -e 's/  *0/ /'`
 # 当日中の、IPを含んだ(拒否|受付)メッセージを抽出[1]
 cat $* |\
 sed -e 's/  */ /g' |\
-egrep -i "^${date} .*smtp_wrapper.*rejected by|^${date} .*smtp_wrapper.*child start" >/tmp/show_retry1.1.$$.tmp
+egrep -i "^${date} .*smtp_wrapper.*rejected by|^${date} .*smtp_wrapper.*child start" >${tmp}/show_retry1.1.$$.tmp
 #
 # 受付メッセージから出現回数、IPを抽出＆編集[2]
-cat /tmp/show_retry1.1.$$.tmp |\
+cat ${tmp}/show_retry1.1.$$.tmp |\
 grep -i 'child start' |\
 sed -e 's/^.*IP=//;s/(.*$//' |\
 sort |\
 uniq -c |\
 grep -v  '^ *1 ' |\
-sort >/tmp/show_retry1.2.$$.tmp
+sort >${tmp}/show_retry1.2.$$.tmp
 #
 # 拒否メッセージから出現回数、IPを抽出＆編集[3]
-cat /tmp/show_retry1.1.$$.tmp |\
+cat ${tmp}/show_retry1.1.$$.tmp |\
 grep -i 'rejected by' |\
 sed -e 's/^.*IP=//;s/).*$//' |\
 sort |\
 uniq -c |\
-sort >/tmp/show_retry1.3.$$.tmp
+sort >${tmp}/show_retry1.3.$$.tmp
 #
 # 受付回数と拒否回数の等しい(つまり完全に拒否されている)IPを抽出[4]
-join -t "," /tmp/show_retry1.2.$$.tmp /tmp/show_retry1.3.$$.tmp |\
+join -t "," ${tmp}/show_retry1.2.$$.tmp ${tmp}/show_retry1.3.$$.tmp |\
 sed -e 's/^ *//' |\
 cut -d ' ' -f 2 |\
-sort >/tmp/show_retry1.4.$$.tmp
+sort >${tmp}/show_retry1.4.$$.tmp
 #
 # 拒否メッセージの間隔がINTERVAL秒以上のIP抽出＆編集[5]
-cat /tmp/show_retry1.1.$$.tmp |\
+cat ${tmp}/show_retry1.1.$$.tmp |\
 grep -i "smtp_wrapper.*rejected by" |\
 sed -e 's/smtp_wrapper:.*IP=//;s/).*$//;s/:/ /g' |\
 sort -t ' ' +6 -7 +2 -5 |\
@@ -102,16 +103,16 @@ END{
 	if (rapid == "NO"){
 		print ip;
 	}
-}' >/tmp/show_retry1.5.$$.tmp
+}' >${tmp}/show_retry1.5.$$.tmp
 #
 # [4][5]マッチングして、全ての受付がINTERVAL秒以上の間隔で拒否されているIPを抽出[6]
-join /tmp/show_retry1.4.$$.tmp /tmp/show_retry1.5.$$.tmp >/tmp/show_retry1.6.$$.tmp
+join ${tmp}/show_retry1.4.$$.tmp ${tmp}/show_retry1.5.$$.tmp >${tmp}/show_retry1.6.$$.tmp
 #
 # [6]にDNS逆引結果を付加して表示
-for i in `cat /tmp/show_retry1.6.$$.tmp`
+for i in `cat ${tmp}/show_retry1.6.$$.tmp`
 do
 	echo -n $i " : "
 	host $i
 done
 #
-rm -f /tmp/show_retry1.*.$$.tmp
+rm -f ${tmp}/show_retry1.*.$$.tmp

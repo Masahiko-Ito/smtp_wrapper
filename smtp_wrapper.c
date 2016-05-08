@@ -10,6 +10,7 @@
  * Ver. 0.2 2006/05/15 release
  * Ver. 0.3 2006/05/24 release
  * Ver. 0.4 2006/10/02 release
+ * Ver. 0.5 2007/??/?? release
  */
 #include <stdio.h>
 #include <fcntl.h>
@@ -31,7 +32,7 @@
 #include <libgen.h>
 #include <syslog.h>
 
-#define SW_VERSION	"0.4"
+#define SW_VERSION	"0.5"
 
 #define SS_INITMSG	(0)
 #define SS_RECVCOM	(1)
@@ -51,7 +52,9 @@
 
 void  SigTrap();
 
+int AlarmSw = 0;
 int ChildCount = 0;
+int AeSw = 0;	/* hidden param for enforced accept EHLO */
 
 /*
  * main routine
@@ -156,6 +159,8 @@ int main(argc, argv, arge)
             nsc_sw = 1;
         }else if (strncmp(argv[i], "-F", strlen("-F")) == 0){
             forground_sw = 1;
+        }else if (strncmp(argv[i], "-ae", strlen("-ae")) == 0){
+            AeSw = 1;
         }else if (strncmp(argv[i], "-h", strlen("-h")) == 0 ||
                   strncmp(argv[i], "--help", strlen("--help")) == 0){
             show_help();
@@ -172,20 +177,22 @@ int main(argc, argv, arge)
  */
     if (forground_sw == 0){
         if (fork() == 0){
-            /* do nothing */;
+            /* do nothing */ /* to be background, to be non session group leader */;
         }else{
             exit(0);
         }
+#if 0
         if ((ct = open("/dev/tty", O_RDWR)) >= 0){
-            ioctl(ct, TIOCNOTTY, 0);
+            ioctl(ct, TIOCNOTTY, 0); /* to disconnect control terminal */
             close(ct);
+        }
+#else
+        setsid(); /* to create new session without control terminal and be session group leader */
+#endif
+        if (fork() == 0){
+            /* do nothing */ /* to be non session group leader */;
         }else{
-            setsid();
-            if (fork() == 0){
-                /* do nothing */;
-            }else{
-                exit(0);
-            }
+            exit(0);
         }
     }
 
@@ -266,7 +273,7 @@ int main(argc, argv, arge)
                 if (strncmp(ip_new, ip_old, sizeof(ip_new)) == 0){
                     bzero(client_buf, BUF_LEN);
                     snprintf(client_buf, sizeof(client_buf) - 1, "421 Service not available, closing transmission channel(rejected by rapidly access. IP=%s)(SW01)\r\n", inet_ntoa(client_sockaddr_in.sin_addr));
-                    if (sock_write(socket_rw_client, client_buf, strlen(client_buf)) < 0){
+                    if (sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv) < 0){
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL05)\n", getpid());
                     }
                     close(socket_rw_client);
@@ -319,6 +326,7 @@ int init_signal()
 {
     signal(SIGTERM, SigTrap);
     signal(SIGCHLD, SigTrap);
+    signal(SIGALRM, SigTrap);
 
     signal(SIGHUP, SIG_IGN);
     signal(SIGINT, SIG_IGN);
@@ -326,7 +334,6 @@ int init_signal()
     signal(SIGQUIT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
-    signal(SIGTTOU, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
 
     return 0;
@@ -340,6 +347,8 @@ void  SigTrap(sig)
 {
     int  status;
 
+    signal(sig, SIG_IGN);
+
     errno = 0;
 
     switch (sig){
@@ -348,6 +357,9 @@ void  SigTrap(sig)
         exit(0);
         break;
     case SIGCHLD:
+        break;
+    case SIGALRM:
+        AlarmSw = 1;
         break;
     default:
         syslog(LOG_MAIL|LOG_INFO, "[%d] signal(%d) catched and exit(SL08)\n", getpid(), sig);
@@ -539,7 +551,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
         if (pipe(pipe_c2p_ip) < 0){
             bzero(client_buf, BUF_LEN);
             snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by pipe_c2p_ip. IP=%s)(SW13)\r\n", inet_ntoa(csa->sin_addr));
-            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL53)\n", getpid());
             }
 
@@ -549,7 +561,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
         if (pipe(pipe_p2c_ip) < 0){
             bzero(client_buf, BUF_LEN);
             snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by pipe_p2c_ip. IP=%s)(SW14)\r\n", inet_ntoa(csa->sin_addr));
-            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL55)\n", getpid());
             }
 
@@ -589,7 +601,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
             if (select_num > 0 && FD_ISSET(socket_rw_client, &fdset)){
                 bzero(client_buf, BUF_LEN);
                 snprintf(client_buf, sizeof(client_buf) - 1, "450 This message was rejected according to site policy(rejected by client disconnect. IP=%s)(SW12)\r\n", inet_ntoa(csa->sin_addr));
-                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL51)\n", getpid());
                 }
     
@@ -598,7 +610,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 smtp_status = SS_EXIT;
             }else{
                 bzero(filter_buf, BUF_LEN);
-                sock_read(fd_r_filter_ip, filter_buf, BUF_LEN - 1, read_filter_buf);
+                sock_read(fd_r_filter_ip, filter_buf, BUF_LEN - 1, read_filter_buf, ptr_tv);
                 close(fd_r_filter_ip);
                 close(fd_w_filter_ip);
                 if (strncmp(filter_buf, "OK", strlen("OK")) == 0 ||
@@ -608,7 +620,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 }else{
                     bzero(client_buf, BUF_LEN);
                     snprintf(client_buf, sizeof(client_buf) - 1, "450 This message was rejected according to site policy(rejected by ip_filter. IP=%s)(SW02)\r\n", inet_ntoa(csa->sin_addr));
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL17)\n", getpid());
                     }
         
@@ -630,7 +642,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
         if ((socket_rw_smtpdaemon = open_rw_socket_for_server(hostname, port)) == -1){
             bzero(client_buf, BUF_LEN);
             snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by MTA error for connect. IP=%s)(SW03)\r\n", inet_ntoa(csa->sin_addr));
-            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL19)\n", getpid());
             }
     
@@ -763,7 +775,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             bzero(client_buf, BUF_LEN);
             snprintf(client_buf, (sizeof client_buf) - 1, "451 Requested action aborted: local error in processing(rejected by select timeout. IP=%s)(SW04)\r\n", inet_ntoa(csa->sin_addr));
-            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL21)\n", getpid());
             }
 
@@ -787,7 +799,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 if (FD_ISSET(socket_rw_client, &fdset) || read_client_buf[0] != '\0'){
                     bzero(client_buf, BUF_LEN);
                     snprintf(client_buf, sizeof(client_buf) - 1, "450 This message was rejected according to site policy(rejected by seq error. IP=%s)(SW05)\r\n", inet_ntoa(csa->sin_addr));
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL24)\n", getpid());
                     }
     
@@ -803,11 +815,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
-                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf)) < 0){
+                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf, ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                 }
-                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf), ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL26)\n", getpid());
@@ -821,7 +833,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
             if (FD_ISSET(socket_rw_client, &fdset) || read_client_buf[0] != '\0'){
 
                 bzero(client_buf, BUF_LEN);
-                if ((ret_client = sock_read(socket_rw_client, client_buf, BUF_LEN - 1, read_client_buf)) < 0){
+                if ((ret_client = sock_read(socket_rw_client, client_buf, BUF_LEN - 1, read_client_buf, ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                 }
@@ -845,7 +857,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                         if (pipe(pipe_c2p) < 0){
                             bzero(client_buf, BUF_LEN);
                             snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by pipe_c2p. IP=%s)(SW06)\r\n", inet_ntoa(csa->sin_addr));
-                            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL27)\n", getpid());
                             }
     
@@ -859,7 +871,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                         if (pipe(pipe_p2c) < 0){
                             bzero(client_buf, BUF_LEN);
                             snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by pipe_p2c. IP=%s)(SW07)\r\n", inet_ntoa(csa->sin_addr));
-                            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                                 syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL29)\n", getpid());
                             }
     
@@ -892,7 +904,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 if (string_compare(client_buf, "QUIT\r\n", strlen("QUIT\r\n")) != 0 &&
                     string_compare(client_buf, "QUIT\n", strlen("QUIT\n")) != 0){
                     if (fd_w_filter > 0){
-                        if ((ret_filter = sock_write(fd_w_filter, client_buf, strlen(client_buf))) < 0){
+                        if ((ret_filter = sock_write(fd_w_filter, client_buf, strlen(client_buf), ptr_tv)) < 0){
                             close(fd_w_filter);
                             fd_w_filter = -1;
                             syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write fd_w_filter error(SL31)\n", getpid());
@@ -905,7 +917,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
                     bzero(client_buf, BUF_LEN);
                     strncpy(client_buf, "354 Hey come on spammers!\r\n", sizeof(client_buf) - 1);
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         close(socket_rw_client);
                         socket_rw_client = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL32)\n", getpid());
@@ -916,18 +928,23 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 }else if (string_compare(client_buf, "QUIT\r\n", strlen("QUIT\r\n")) == 0 ||
                           string_compare(client_buf, "QUIT\n", strlen("QUIT\n")) == 0){
 
-                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         close(socket_rw_smtpdaemon);
                         socket_rw_smtpdaemon = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_smtpdaemon error(SL33)\n", getpid());
                     }
                     smtp_status = SS_RESQUIT;
 
-                }else if (string_compare(client_buf, "EHLO ", strlen("EHLO ")) == 0){
+                }else if (AeSw == 0 && 
+                          string_compare(client_buf, "EHLO ", strlen("EHLO ")) == 0){
 
                     bzero(client_buf, BUF_LEN);
+#if 0
                     snprintf(client_buf, sizeof(client_buf) - 1, "504 Command parameter not implemented(rejected by EHLO error. IP=%s)(SW08)\r\n", inet_ntoa(csa->sin_addr));
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+#else
+                    snprintf(client_buf, sizeof(client_buf) - 1, "502 Command not implemented(rejected by EHLO error. IP=%s)(SW08)\r\n", inet_ntoa(csa->sin_addr));
+#endif
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         close(socket_rw_client);
                         socket_rw_client = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL34)\n", getpid());
@@ -937,7 +954,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
                 }else{
 
-                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         close(socket_rw_smtpdaemon);
                         socket_rw_smtpdaemon = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_smtpdaemon error(SL35)\n", getpid());
@@ -951,11 +968,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
-                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf)) < 0){
+                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf, ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                 }
-                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf), ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL36)\n", getpid());
@@ -972,11 +989,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
-                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf)) < 0){
+                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf, ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                 }
-                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf), ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL37)\n", getpid());
@@ -989,12 +1006,12 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_client, &fdset) || read_client_buf[0] != '\0'){
                 bzero(client_buf, BUF_LEN);
-                if ((ret_client = sock_read(socket_rw_client, client_buf, BUF_LEN - 1, read_client_buf)) < 0){
+                if ((ret_client = sock_read(socket_rw_client, client_buf, BUF_LEN - 1, read_client_buf, ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                 }
                 if (fd_w_filter > 0){
-                    if ((ret_filter = sock_write(fd_w_filter, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_filter = sock_write(fd_w_filter, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         close(fd_w_filter);
                         fd_w_filter = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write fd_w_filter error(SL38)\n", getpid());
@@ -1014,14 +1031,14 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(fd_r_filter, &fdset) || read_filter_buf[0] != '\0'){
                 bzero(filter_buf, BUF_LEN);
-                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf)) < 0){
+                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf, ptr_tv)) < 0){
                     close(fd_r_filter);
                     fd_r_filter = -1;
                 }
 
                 bzero(client_buf, BUF_LEN);
                 snprintf(client_buf, sizeof(client_buf) - 1, "450 This message was accepted partly, but it was rejected according to site policy(rejected by contents_filter. IP=%s)(SW09)\r\n", inet_ntoa(csa->sin_addr));
-                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL39)\n", getpid());
                 }
 
@@ -1038,13 +1055,13 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(fd_r_filter, &fdset) || read_filter_buf[0] != '\0'){
                 bzero(filter_buf, BUF_LEN);
-                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf)) < 0){
+                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf, ptr_tv)) < 0){
                     close(fd_r_filter);
                     fd_r_filter = -1;
                 }
                 if (string_compare(filter_buf, "DATA\r\n", strlen("DATA\r\n")) == 0 ||
                     string_compare(filter_buf, "DATA\n", strlen("DATA\n")) == 0){
-                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, filter_buf, strlen(filter_buf))) < 0){
+                    if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, filter_buf, strlen(filter_buf), ptr_tv)) < 0){
                         close(socket_rw_smtpdaemon);
                         socket_rw_smtpdaemon = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_smtpdaemon error(SL41)\n", getpid());
@@ -1054,7 +1071,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 }else{
                     bzero(client_buf, BUF_LEN);
                     snprintf(client_buf, sizeof(client_buf) - 1, "450 This message was accepted all, but it was rejected according to site policy(rejected by contents_filter. IP=%s)(SW10)\r\n", inet_ntoa(csa->sin_addr));
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL42)\n", getpid());
                     }
 
@@ -1072,7 +1089,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
-                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf)) < 0){
+                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf, ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                 }
@@ -1081,7 +1098,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
                 }else{
                     bzero(client_buf, BUF_LEN);
                     snprintf(client_buf, sizeof(client_buf) - 1, "451 server error, rejected(rejected by MTA error for DATA. IP=%s)(SW11)\r\n", inet_ntoa(csa->sin_addr));
-                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf), ptr_tv)) < 0){
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL44)\n", getpid());
                     }
 
@@ -1099,11 +1116,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(fd_r_filter, &fdset) || read_filter_buf[0] != '\0'){
                 bzero(filter_buf, BUF_LEN);
-                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf)) < 0){
+                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf, ptr_tv)) < 0){
                     close(fd_r_filter);
                     fd_r_filter = -1;
                 }
-                if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, filter_buf, strlen(filter_buf))) < 0){
+                if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, filter_buf, strlen(filter_buf), ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_smtpdaemon error(SL46)\n", getpid());
@@ -1124,11 +1141,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, ip_filter, 
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
-                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf)) < 0){
+                if ((ret_smtpdaemon = sock_read(socket_rw_smtpdaemon, smtpdaemon_buf, BUF_LEN - 1, read_smtpdaemon_buf, ptr_tv)) < 0){
                     close(socket_rw_smtpdaemon);
                     socket_rw_smtpdaemon = -1;
                 }
-                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf))) < 0){
+                if ((ret_client = sock_write(socket_rw_client, smtpdaemon_buf, strlen(smtpdaemon_buf), ptr_tv)) < 0){
                     close(socket_rw_client);
                     socket_rw_client = -1;
                     syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error(SL47)\n", getpid());
@@ -1202,11 +1219,12 @@ int execute_filter(filter, pipe_p2c, pipe_c2p)
 /*
  * read from socket or pipe
  */
-int  sock_read(s, buf, len, read_buf)
+int  sock_read(s, buf, len, read_buf, ptr_tv)
     int   s;
     char *buf;
     int   len;
     char *read_buf;
+    struct timeval *ptr_tv;
 {
     int ret, read_len, return_len;
     char *ptr_lf, *ptr_null;
@@ -1215,15 +1233,29 @@ int  sock_read(s, buf, len, read_buf)
 
         errno = 0;
         read_len = (RW_LEN < (BUF_LEN - strlen(read_buf) - 1) ? RW_LEN : (BUF_LEN - strlen(read_buf) - 1));
+        AlarmSw = 0;
+        if (ptr_tv == (struct timeval *)NULL){
+            alarm(0);
+        }else{
+            alarm(ptr_tv->tv_sec);
+        }
         ret = read(s, strchr(read_buf, '\0'), read_len);
+        alarm(0);
 
-        while ((ret > 0 || (ret < 0 && errno == EINTR)) &&
+        while ((ret > 0 || (ret < 0 && errno == EINTR && AlarmSw == 0)) &&
                 read_len > 0                             &&
                 strchr(read_buf, '\n') == (char *)NULL){
 
             errno = 0;
             read_len = (RW_LEN < (BUF_LEN - strlen(read_buf) - 1) ? RW_LEN : (BUF_LEN - strlen(read_buf) - 1));
+            AlarmSw = 0;
+            if (ptr_tv == (struct timeval *)NULL){
+                alarm(0);
+            }else{
+                alarm(ptr_tv->tv_sec);
+            }
             ret = read(s, strchr(read_buf, '\0'), read_len);
+            alarm(0);
         }
     }
 
@@ -1252,24 +1284,39 @@ int  sock_read(s, buf, len, read_buf)
 /*
  * write into socket or pipe
  */
-int  sock_write(s, buf, len)
+int  sock_write(s, buf, len, ptr_tv)
     int  s;
     char *buf;
     int  len;
+    struct timeval *ptr_tv;
 {
     int ret, cnt = 0, rem_cnt = (len > BUF_LEN ? BUF_LEN : len);
 
     errno = 0;
+    AlarmSw = 0;
+    if (ptr_tv == (struct timeval *)NULL){
+        alarm(0);
+    }else{
+        alarm(ptr_tv->tv_sec);
+    }
     if ((ret = write(s, buf + cnt, rem_cnt)) >= 0){
         cnt += ret;
         rem_cnt -= ret;
     }
-    while ((ret >= 0 || (ret < 0 && errno == EINTR)) && rem_cnt > 0){
+    alarm(0);
+    while ((ret >= 0 || (ret < 0 && errno == EINTR && AlarmSw == 0)) && rem_cnt > 0){
         errno = 0;
+        AlarmSw = 0;
+        if (ptr_tv == (struct timeval *)NULL){
+            alarm(0);
+        }else{
+            alarm(ptr_tv->tv_sec);
+        }
         if ((ret = write(s, buf + cnt, rem_cnt)) >= 0){
             cnt += ret;
             rem_cnt -= ret;
         }
+        alarm(0);
     }
     if (rem_cnt <= 0){
         return cnt;

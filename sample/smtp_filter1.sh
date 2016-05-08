@@ -22,6 +22,12 @@ PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:
 export PATH
 #============================================================
 #
+# timeout (This was bad idea :<)
+#
+#timeout=10m
+#(sleep ${timeout}; kill -15 ${PPID}) &
+#============================================================
+#
 # smtp_wrapperディレクトリ指定
 #
 smtp_wrapper_dir="/usr/local/smtp_wrapper"

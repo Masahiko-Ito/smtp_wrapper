@@ -1,4 +1,4 @@
-smtp_wrapper-0.4 -- SMTP filtering support daemon
+smtp_wrapper-0.5 -- SMTP filtering support daemon
 Copyright (C) 2006  Masahiko Ito
 
 These programs is free software; you can redistribute it and/or modify
