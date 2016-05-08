@@ -1,0 +1,35 @@
+Command sequence
+================
+
+ stat|command/response|in       |out      |stat|comment
+-----+----------------+---------+---------+----+-------------------------
+ 1   |QUIT            |(1)      |   [2]   |8   |
+     |                |         |         |    |
+ 1   |HELO            |(1)      |   [2][3]|1   |
+ 1   |RES(HELO)       |   (2)   |[1]      |1   |
+ 1   |MAIL FROM:      |(1)      |   [2][3]|1   |
+ 1   |RES(MAIL FROM:) |   (2)   |[1]      |1   |
+ 1   |RCPT TO:        |(1)      |   [2][3]|1   |
+ 1   |RES(RCPT TO:)   |   (2)   |[1]      |1   |
+     |                |         |         |    |
+ 1   |DATA            |(1)      |      [3]|2   |
+ 2   |FAKERES(DATA)   |         |[1]      |3   |354 fake ack
+     |                |         |         |    |
+ 3   |MESSAGES        |(1)      |      [3]|3   |
+[3   |ANYDATA         |      (3)|[1]      |1   |450 temporary error]
+     |                |         |         |    |
+ 3   |.               |(1)      |      [3]|4   |
+     |                |         |         |    |
+ 4   |DATA            |      (3)|   [2]   |5   |
+[4   |!DATA           |      (3)|[1]      |1   |450 temporary error]
+     |                |         |         |    |
+ 5   |RES(DATA)       |   (2)   |---------|6   |no response
+     |                |         |         |    |(already responsed 354)
+[5   |RES(DATA)       |   (2)   |[1]      |1   |!354 then 450 temporary 
+     |                |         |         |    |error for .]
+     |                |         |         |    |
+ 6   |MESSAGES        |      (3)|   [2]   |6   |
+ 6   |.               |      (3)|   [2]   |7   |
+ 7   |RES(.)          |   (2)   |[1]      |1   |
+     |                |         |         |    | 
+ 8   |RES(QUIT)       |   (2)   |[1]      |    |exit

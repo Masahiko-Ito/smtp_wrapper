@@ -1,0 +1,4 @@
+# sample
+# spammerのホスト名
+^mail\.spammer\.net$
+^warumono\.org$

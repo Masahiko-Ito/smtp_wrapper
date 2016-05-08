@@ -1,0 +1,21 @@
+smtp_wrapper-0.3 -- SMTP filtering support daemon
+Copyright (C) 2006  Masahiko Ito
+
+These programs is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+These programs is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with these programs; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+Mail suggestions and bug reports for these programs to
+"Masahiko Ito" <m-ito@myh.no-ip.org>
+
+See http://myh.no-ip.org/~m-ito/lib100/smtp_wrapper-e.html for detail ;-)

@@ -1,4 +1,4 @@
-smtp_wrapper-0.2 -- SMTP filtering support daemon
+smtp_wrapper-0.3 -- SMTP filtering support daemon
 Copyright (C) 2006  Masahiko Ito
 
 These programs is free software; you can redistribute it and/or modify
@@ -13,17 +13,18 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with these programs; if not, write to the Free Software
-Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0.2-1307  USA
+Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 Mail suggestions and bug reports for these programs to
-"Masahiko Ito" <m-ito@mbox.kyoto-inet.or.jp>
+"Masahiko Ito" <m-ito@myh.no-ip.org>
 
 History
 =======
 
 2005/11/25 Develop started
-2006/01/23 First release(0.1)
+2006/01/23 Ver. 0.1 release (1st)
 2006/05/15 Ver. 0.2 release
+2006/05/24 Ver. 0.3 release
 
 What's this ?
 =============
@@ -92,17 +93,20 @@ Install
 =======
 
 o cd /usr/local/
-o tar xvzf smtp_wrapper-0.2.tar.gz
-o cd smtp_wrapper-0.2
+o tar xvzf smtp_wrapper-0.3.tar.gz
+o ln -sf smtp_wrapper-0.3 smtp_wrapper
+o cd smtp_wrapper
 o cc -o smtp_wrapper smtp_wrapper.c
-o vi filter_script
-o chmod +x filter_script
+o vi smtp_filter1.sh # フィルタは各自で用意して下さい(for ip_filter)
+o vi smtp_filter2.sh # フィルタは各自で用意して下さい(*必須*)(for contents_filter)
+o chmod +x smtp_filter[12].sh
 o smtp_wrapper -h
 
   Usage : smtp_wrapper [-mh hostname] [-mp port] [-q backlog] 
                        [-sh smtpserver_hostname] [-sp smtpserver_port] 
-                       [-t timeout_sec] [-d delay_sec] [-f filter] 
-                       [-cm child_max] [-i minimum_interval_sec] [-F]
+                       [-t timeout_sec] [-d delay_sec] [-if ip_filter] 
+                       [-f contents_filter] [-cm child_max] [-i minimum_interval_sec]
+                       [-F]
     -mh hostname             : my hostname [ANY]
     -mp port                 : my port [25]
     -q  backlog              : socket queue number [5]
@@ -110,12 +114,10 @@ o smtp_wrapper -h
     -sp smtpserver_port      : real smtp port [8025]
     -t  timeout_sec          : timeout second [no timeout]
     -d  delay_sec            : delay second for initial connection [0]
-    -f  filter               : filter program 
-                               [/usr/local/smtp_wrapper/smtp_filter]
-    -cm child_max            : max number of connection to real smtp daemon 
-                               [10]
-    -i  minimum_interval_sec : minimum interval second of connection from 
-                               same ip address [0]
+    -if ip_filter            : filter program for IP check [/usr/local/smtp_wrapper/smtp_ip_filter]
+    -f  contents_filter      : filter program for contents check [/usr/local/smtp_wrapper/smtp_contents_filter]
+    -cm child_max            : max number of connection to real smtp daemon [10]
+    -i  minimum_interval_sec : minimum interval second of connection from same ip address [0]
     -F                       : run in foreground
 
 sendmailの設定
@@ -129,12 +131,12 @@ o vi submit.mc
   DAEMON_OPTIONS(`Port=8025, Name=NoMTA, Addr=127.0.0.1, M=E')dnl
 o sendmail.cf, submit.cfを更新
 
-sendmail.cf
------------
+sendmail.cfに以下の行が追加されている事を確認
+---------------------------------------------
 O DaemonPortOptions=Port=8025, Name=MTA
 
-submit.cf
----------
+submit.cfに以下の行が追加されている事を確認
+-------------------------------------------
 O DaemonPortOptions=Port=8025, Name=NoMTA, Addr=127.0.0.1, M=E
 
 起動
@@ -142,12 +144,14 @@ O DaemonPortOptions=Port=8025, Name=NoMTA, Addr=127.0.0.1, M=E
 
 o vi /etc/rc.d/rc.local
 
-  if [ -x /usr/local/smtp_wrapper-0.2/smtp_wrapper ]
+  if [ -x /usr/local/smtp_wrapper/smtp_wrapper ]
   then
-      /usr/local/smtp_wrapper-0.2/smtp_wrapper \
+      /usr/local/smtp_wrapper/smtp_wrapper \
           -t 60 \
           -d 10 \
-          -f /usr/local/smtp_wrapper-0.2/filter_script \
+          -if /usr/local/smtp_wrapper/smtp_filter1.sh \
+          -f /usr/local/smtp_wrapper/smtp_filter2.sh \
+          -cm 10 \
           -i 5
       echo ' smtp_wrapper'
   fi
@@ -173,42 +177,60 @@ Figure
             |            | E  |                                         |
             |   (stdout) |    V (stdin)                                 |
             |          +--------+                                       |
-            |          |        |                                       |
-            |          | FILTER |                                       |
-            |          |        |                                       |
-            |          +--------+                                       |
-            |                                                           |
+            |          |   IP   |--------+                              |
+            |          | FILTER |CONTENTS|                              |
+            |          |        | FILTER |                              |
+            |          +--------+        |                              |
+            |                  +---------+                              |
             |                                                           |
             +-----------------------------------------------------------+
 
   o smtp_wrapper(親)が本来のMTAに代ってsmtp(25)ポートへの接続を監視します。
 
-  o 接続を受けたsmtp_wrapper(親)は、`-d'オプションで指定した秒数sleepした
-    後に子プロセス(smtp_wrapper(子))を生成し、以降の接続元との通信を子プロ
-    セスにまかせ、再度smtp(25)ポートの監視を繰り返します。また、接続を受け
-    た時点で、今現在稼働しているsmtp_wrapper(子)の数が`-mc'オプションで指
-    定した数を越えている場合、その数が`-mc'オプションの指定値の2分の1以下
-    になるまで`-d'オプションで指定した秒数のsleepを繰り返します。
+  o 接続を受けたsmtp_wrapper(親)は、今現在稼働しているsmtp_wrapper(子)の
+    数が`-mc'オプションで指定した数を越えている場合、その数が`-mc'オプショ
+    ンの指定値の2分の1以下になるまで`-d'オプションで指定した秒数のsleepを
+    繰り返します。
 
   o 同一IPからの連続した接続に対して、その接続間隔が`-i'オプションで指定
     した秒数よりも短い場合は、その接続に対して一時エラー(421)を返し接続を
     閉じます。
 
-  o smtp_wrapper(子)は接続元のIPアドレスを環境変数`SW_FROM_IP'に設定したの
-    ちフィルタプログラムをfork&execします。
+  o smtp_wrapper(親)は子プロセス(smtp_wrapper(子))を生成し、以降の接続元
+    との通信を子プロセスにまかせ、再度smtp(25)ポートの監視を繰り返します。
 
-  o smtp_wrapper(子)は接続元からのメッセージのうち`HELO|EHLO'、`MAIL FROM:'、
+  o smtp_wrapper(子)は`-d'オプションで指定した秒数sleepした後に接続元と
+    の通信を開始(greeting message送出)します。
+
+  o smtp_wrapper(子)は接続元のIPアドレスを環境変数`SW_FROM_IP'に設定した
+    のち`-if'オプションで指定したフィルタプログラムをfork&execします。こ
+    のフィルタプログラムには環境変数`SW_FROM_IP'の情報を元にしたチェック
+    を行わせます。その際、このフィルタプログラムの標準入力に対しては一切
+    データは渡されないので、コンテンツの内容を利用したチェックは出来ませ
+    ん。
+
+    フィルタプログラムには、正当な接続に対しては`OK'または`ok'または`'(空
+    文字列)を標準出力に出力させ、不正な接続に対しては`OK',`ok'以外のメッセー
+    ジを標準出力に出力させ、終了させます。
+
+  o smtp_wrapper(子)はフィルタプログラムからのメッセージが`OK',`ok'以外の
+    文字列で始まっていた場合、それを不正な接続とみなし、接続元に`450'で始
+    まる一時エラー応答を返します。フィルタプログラムのチェックを通過した後、
+    本来のMTAに対して接続を開始し、`-f'オプションで指定したフィルタプログ
+    ラムをfork&execします。
+
+  o smtp_wrapper(子)は接続元からのメッセージのうち`HELO'、`MAIL FROM:'、
     `RCPT TO:'等の`DATA'コマンドまでのメッセージを本来のMTA(上図では、待ち
     受けポートを8025に変更)とフィルタプログラムに渡し、MTAからの応答メッセー
-    ジを接続元に渡します。その後`DATA'から`.'をフィルタプログラムのみに渡
-    した後、フィルタプログラムからの応答(チェック結果)を待ちます。
+    ジを接続元に渡します。その後`DATA'から`.'までをフィルタプログラムのみ
+    に渡した後、フィルタプログラムからの応答(チェック結果)を待ちます。
 
-  o フィルタプログラムは環境変数`SW_FROM_IP'と(必要であれば)受け渡されたメッ
-    セージ本文から正当なメッセージか不当なメッセージかを判断し、正当なメッ
-    セージと判断した場合は受け渡されたメッセージのうち`DATA<CR><LF>'から
-    `.<CR><LF>'までを標準出力に出力させます。また不正メッセージと判断した
-    場合は直ちに終了するか、`DATA<CR><LF>'以外で始まるメッセージを標準出力
-    に出力した後、終了させます。
+  o フィルタプログラムには標準入力から受け渡されたメッセージ本文から正当な
+    メッセージか不当なメッセージかを判断し、正当なメッセージと判断した場合
+    は受け渡されたメッセージのうち`DATA<CR><LF>'から`.<CR><LF>'までを標準出
+    力に出力させます。また不正メッセージと判断した場合は直ちに終了するか、
+    `DATA<CR><LF>'以外で始まるメッセージを標準出力に出力した後、終了させま
+    す。
 
   o smtp_wrapper(子)はフィルタプログラムからのメッセージが`DATA<CR><LF>'で
     始まっていた場合、それを正当なメッセージとみなし、本来のMTAに受け渡しま
@@ -220,59 +242,78 @@ Figure
     smtp_wrapper(子)<->本来のMTA間のコネクションが切断されるまで上記の動作
     を繰り返します。
 
-Command sequence
-================
+spam対策機能(のまとめ)
+======================
 
- stat|command/response|in       |out      |stat|comment
------+----------------+---------+---------+----+-------------------------
- 1   |QUIT            |(1)      |   [2]   |8   |
-     |                |         |         |    |
- 1   |HELO            |(1)      |   [2][3]|1   |
- 1   |RES(HELO)       |   (2)   |[1]      |1   |
- 1   |MAIL FROM:      |(1)      |   [2][3]|1   |
- 1   |RES(MAIL FROM:) |   (2)   |[1]      |1   |
- 1   |RCPT TO:        |(1)      |   [2][3]|1   |
- 1   |RES(RCPT TO:)   |   (2)   |[1]      |1   |
-     |                |         |         |    |
- 1   |DATA            |(1)      |      [3]|2   |
- 2   |FAKERES(DATA)   |         |[1]      |3   |354 fake ack
-     |                |         |         |    |
- 3   |MESSAGES        |(1)      |      [3]|3   |
-[3   |ANYDATA         |      (3)|[1]      |1   |450 temporary error]
-     |                |         |         |    |
- 3   |.               |(1)      |      [3]|4   |
-     |                |         |         |    |
- 4   |DATA            |      (3)|   [2]   |5   |
-[4   |!DATA           |      (3)|[1]      |1   |450 temporary error]
-     |                |         |         |    |
- 5   |RES(DATA)       |   (2)   |---------|6   |no response
-     |                |         |         |    |(already responsed 354)
-[5   |RES(DATA)       |   (2)   |[1]      |1   |!354 then 450 temporary 
-     |                |         |         |    |error for .]
-     |                |         |         |    |
- 6   |MESSAGES        |      (3)|   [2]   |6   |
- 6   |.               |      (3)|   [2]   |7   |
- 7   |RES(.)          |   (2)   |[1]      |1   |
-     |                |         |         |    | 
- 8   |RES(QUIT)       |   (2)   |[1]      |    |exit
+o `-i'オプションで指定した秒数未満の間隔での、同一IPからのアクセスを拒否する。
+  接続元には以下のメッセージを返す。
+
+  421 Service not available, closing transmission channel(rejected by rapidly access. IP=%s)(SW01)\r\n
+
+o `-if'オプションで指定したフィルタにより不正と判断された場合、アクセスを拒否
+  する。
+  接続元には以下のメッセージを返す。
+
+  450 This message was rejected according to site policy(rejected by ip_filter. IP=%s)(SW02)\r\n
+
+o SMTPコマンドの送受信順序を無視したアクセスを拒否する。`-d'オプション指定に
+  より遅延させたgreeting messageを待ち切れずに、おそらく多くのspammerがメッ
+  セージを送り付けて来る。これを撃退する。
+  接続元には以下のメッセージを返す。
+
+  450 This message was rejected according to site policy(rejected by seq error. IP=%s)(SW05)\r\n
+
+o `-f'オプションで指定したフィルタにより不正と判断された場合、受信を拒否する。
+  接続元には以下のメッセージを返す。
+
+  450 This message was accepted partly, but it was rejected according to site policy(rejected by contents_filter. IP=%s)(SW09)\r\n
+  450 This message was accepted all, but it was rejected according to site policy(rejected by contents_filter. IP=%s)(SW10)\r\n
 
 Filter
 ======
 
-フィルタの基本的な構造は以下のように作成してください。
+`-if'で指定するフィルタの基本的な構造は以下のように作成してください。
+---------------------------------------------------------------------
 
-o 必要に応じて、環境変数`SW_FROM_IP'に設定されている接続元の
-  IPおよびIPから逆引したFQDNをチェックし、不正接続と判断した
-  ならexitしてください。また、exit直前にstdoutに出力した内容
-  の最初の1行がsyslog経由(mail.info)で記録されます。その際の
-  出力には`DATA<CR><LF>'を含めないで下さい(smtp_wrapperが正当
-  なメールと誤判断してしまうので)。
+o 主に接続元のIPアドレスに対するチェックを行います(S25R)。
+
+o 環境変数`SW_FROM_IP'に設定されている接続元のIPおよびIPから
+  逆引したFQDNをチェックし、正当な接続と判断したならstdoutに
+  何も出力せずにexitして下さい(明示的に正当である事を示したい
+  場合は`OK'または`ok'を出力しexitする事も可能)
+
+  不正な接続と判断したなら、stdoutに`OK', `ok'以外で始まるメッ
+  セージを出力しexitして下さい。このstdoutに出力したメッセージ
+  はsyslog経由(mail.info)で記録されます。
+
+o 要約
+
+  正当な接続時 : stdoutには何も出力せずに終了する(`OK', `ok'を
+                 出力する事も可能)。
+  不正な接続時 : `OK', `ok'以外で始まるメッセージをstdoutに出
+                 力して終了する。
+
+`-f'で指定するフィルタの基本的な構造は以下のように作成してください。
+--------------------------------------------------------------------
+
+o 主にコンテンツ内容に対するチェックを行います(第三者リレーチェック)。
 
 o *必ず*、一旦stdinからの入力を全てテンポラリファイルに書き出
-  して下さい。通常stdinからは`HELO ...<CR><LF>'または`EHLO ...<CR><LF>'
-  または`MAIL FROM: ...<CR><LF>' -> いくつかのSMTPコマンド 
-  -> `DATA<CR><LF>' -> メール本文 -> `.<CR><LF>'の順でデータ
-  が入って来るでしょう...。
+  して下さい。通常stdinからは
+
+    `HELO ...<CR><LF>'または`MAIL FROM: ...<CR><LF>' 
+    -> いくつかのSMTPコマンド 
+    -> `DATA<CR><LF>' 
+    -> メール本文 
+    -> `.<CR><LF>'
+
+  の順でデータが入って来るでしょう...。
+
+o テンポラリファイルに書き出したデータをチェックし、不正接続
+  と判断したならexitしてください。また、exit直前にstdoutに出
+  力した内容の最初の1行がsyslog経由(mail.info)で記録されます。
+  その際の出力には`DATA<CR><LF>'を含めないで下さい(smtp_wrapper
+  が正当なメールと誤判断してしまうので)。
 
 o *必ず*、上述のテンポラリファイル中の`RCPT TO:'の内容と環境
   変数`SW_FROM_IP'の内容から不正リレー(第三者リレー)をチェッ
@@ -283,14 +324,70 @@ o *必ず*、上述のテンポラリファイル中の`RCPT TO:'の内容と環境
   から見ると接続して来るサーバは全て自分自身(smtp_wrapper)な
   ので判断のしようが無いためです :-P
 
-o 必要に応じて、上述のテンポラリファイルの内容によりチェック
-  (spam,virus etc)を行い、不正接続と判断したならexitしてくだ
-  さい。
+o 必要に応じて、その他のチェック(spam,virus etc)を行い、不正
+  接続と判断したならexitしてください。
 
 o 必要に応じて、その他の必要な処理(ヘッダー挿入、内容改竄、
   極秘保存等)を行って下さい B-)
 
 o 最終的に、正当な接続と判断されたなら、上述のテンポラリファ
-  イルから`DATA<CR><LF>' -> メール本文 -> `.<CR><LF>'をstdout
-  に出力しexitしてください。
+  イルから
 
+    `DATA<CR><LF>' 
+    -> メール本文 
+    -> `.<CR><LF>'
+
+  をstdoutに出力しexitしてください。
+
+o 要約
+
+  正当な接続時 : `DATA<CR><LF>' -> メール本文 -> `.<CR><LF>'
+                 を標準出力に出力し終了する。
+  不正な接続時 : `DATA'以外で始まるメッセージを標準出力に出力
+                 し終了する。
+
+※ 本フィルタ(`-f')は*必ず*設置しなければなりません。最低限、
+   標準入力から`DATA<CR><LF>' -> メール本文 -> `.<CR><LF>'を
+   標準出力に出力する機能を実装して下さい(see sample/smtp_null_filter.sh)。
+
+※ 従来(Ver. 0.2.x以前)と同様に`-f'オプションで指定するフィル
+   タプログラムに全てのチェックを行わせることも可能です。その
+   場合は`-if'オプションを指定する必要はありません。
+
+   非力なサーバで運用される場合は`-if', `-f'を使い分けた方が
+   負荷が軽減されるでしょう。ちなみに、うちのサーバは
+   MMX166MHz + Memory 64MB ;)
+
+BUGS
+====
+
+o とりあえず、フィルタスクリプトを自分で書かないと、あまり意味
+  がありません。一応、smtp_wrapperだけでも`-i'オプションによる
+  速射spam対策と`-d'オプションによる`greet pause'効果
+  (sendmail-8.13.x系でも同様の機能を導入)は見込めるのですが...。
+
+o fetchmailで取り込むメールを重複して受信することがあるようで
+  す(-_-;。 
+
+  まず、fetchmailで取り込むメールはフィルタの検査対象にしては
+  なりません。なぜなら、複数のメッセージを取り込んでいる途中
+  でspamと判定されるメッセージが有った場合、fetchmailの動作が
+  その時点で終了してしまう(ようだ)からです。この場合、手動で
+  POPサーバ側からspamメールを削除しない限り、永久に先に進めな
+  いのではないかと思われます。 
+
+  また、仮にフィルタ側で常にspamでないと判断させ、smtp_wrapper
+  をスルーさせても、システムのロードアベレージが10を越えて
+  sendmail自身がメッセージの受付を拒否し始めた場合に重複して受
+  信することがあるようです。 
+
+  ですので結局のところfetchmailに関しては、 
+
+    fetchmail -S localhost/8025 ほにゃらら
+
+  みたいにして、smtp_wrapperをすっ飛ばして受信したほうが良さそ
+  うです。 
+
+  fetchmailを使って(個人で)取り込むメールのspam対策は、procmail
+  と上述のフィルタの応用版、もしくはベイズ系フィルタとの組合せ
+  でもって、クライアント側で対応するのが吉かと...。 
