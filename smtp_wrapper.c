@@ -1,8 +1,12 @@
 /*
+ * This part of smtp_wrapper-0.2 is distributed under GNU General Public License.
+ */
+
+/*
  * smtp_wrapper (spam filtering support daemon) 
  *   by "Masahiko Ito" <m-ito@mbox.kyoto-inet.or.jp>
  *
- * Ver. 0.1 2006/01/23 release
+ * Ver. 0.2 2006/05/15 release
  */
 #include <stdio.h>
 #include <fcntl.h>
@@ -11,6 +15,7 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <netdb.h>
 #include <string.h>
 #include <errno.h>
@@ -23,7 +28,7 @@
 #include <libgen.h>
 #include <syslog.h>
 
-#define SW_VERSION	"0.1"
+#define SW_VERSION	"0.2"
 
 #define SS_INITMSG	(0)
 #define SS_RECVCOM	(1)
@@ -37,6 +42,7 @@
 #define SS_EXIT		(9)
 
 #define BUF_LEN (1024 * 16)
+#define RW_LEN (16)
 #define HOST_LEN (256)
 #define PATH_LEN (256)
 
@@ -47,7 +53,7 @@ int ChildCount = 0;
 /*
  * main routine
  *
- *  Usage : smtp_wrapper -mh hostname -mp port -q backlog -sh smtpserver_hostname -sp smtpserver_port -t timeout_sec -d delay_sec -f filter -cm child_max -F
+ *  Usage : smtp_wrapper -mh hostname -mp port -q backlog -sh smtpserver_hostname -sp smtpserver_port -t timeout_sec -d delay_sec -f filter -cm child_max -i minimum_interval_sec -F
  */
 int main(argc, argv, arge)
     int  argc;
@@ -60,16 +66,27 @@ int main(argc, argv, arge)
     char filter[PATH_LEN];
     int port, smtp_port, backlog;
     struct timeval tv, *ptr_tv;
-    int delay_sec;
-    struct sockaddr_in client_sockaddr_in;
+    int delay_sec, minimum_interval_sec;
+    struct sockaddr_in client_sockaddr_in, client_sockaddr_in_old;
     int forground_sw;
     int child_max;
     int left_sleep;
+    int ct;
+    struct timeval tv_acc, tv_acc_old;
+    char client_buf[BUF_LEN];
+    char ip_new[16], ip_old[16];
 
 /*
  * start message
  */
     syslog(LOG_MAIL|LOG_INFO, "[%d] smtp_wrapper ver. %-s started\n", getpid(), SW_VERSION);
+
+/*
+ * initialize struct
+ */
+    bzero(&client_sockaddr_in_old, sizeof(client_sockaddr_in_old));
+    bzero(&tv_acc_old, sizeof(tv_acc_old));
+
 /*
  * initialize arguments
  */
@@ -86,6 +103,7 @@ int main(argc, argv, arge)
     delay_sec = 0;
     forground_sw = 0;
     child_max = 10;
+    minimum_interval_sec = 0;
 
     for (i = 1; i < argc; i++){
         if (strncmp(argv[i], "-mh", strlen("-mh")) == 0){
@@ -120,6 +138,9 @@ int main(argc, argv, arge)
         }else if (strncmp(argv[i], "-cm", strlen("-cm")) == 0){
             i++;
             child_max = atoi(argv[i]);
+        }else if (strncmp(argv[i], "-i", strlen("-i")) == 0){
+            i++;
+            minimum_interval_sec = atoi(argv[i]);
         }else if (strncmp(argv[i], "-F", strlen("-F")) == 0){
             forground_sw = 1;
         }else if (strncmp(argv[i], "-h", strlen("-h")) == 0 ||
@@ -142,6 +163,17 @@ int main(argc, argv, arge)
         }else{
             exit(0);
         }
+        if ((ct = open("/dev/tty", O_RDWR)) >= 0){
+            ioctl(ct, TIOCNOTTY, 0);
+            close(ct);
+        }else{
+            setsid();
+            if (fork() == 0){
+                /* do nothing */;
+            }else{
+                exit(0);
+            }
+        }
     }
 
 /*
@@ -159,7 +191,6 @@ int main(argc, argv, arge)
  * initialize value
  */
     errno = 0;
-
 
 /*
  * open socket for client
@@ -183,6 +214,9 @@ int main(argc, argv, arge)
  */
         sweep_zombi();
 
+/*
+ * check child max count
+ */
         if (ChildCount > child_max){
             syslog(LOG_MAIL|LOG_INFO, "[%d] ChildCount exceeds child_max(%d), so sleep into %d sec\n", getpid(), child_max, delay_sec);
 
@@ -205,19 +239,53 @@ int main(argc, argv, arge)
             syslog(LOG_MAIL|LOG_INFO, "[%d] ChildCount become under half of child_max(%d), so wakeup\n", getpid(), child_max);
         }
 
-        if (fork() == 0){
+/*
+ * check cyclic & rapidly connection
+ */
+        gettimeofday(&tv_acc, NULL);
 
-            left_sleep = sleep(delay_sec);
-            while (left_sleep > 0){
-                left_sleep = sleep(left_sleep);
+        if (tv_acc_old.tv_sec > 0){
+            if ((tv_acc.tv_sec - tv_acc_old.tv_sec) < minimum_interval_sec){
+                bzero(ip_new, sizeof(ip_new));
+                strncpy(ip_new, inet_ntoa(client_sockaddr_in.sin_addr), sizeof(ip_new) - 1);
+                bzero(ip_old, sizeof(ip_old));
+                strncpy(ip_old, inet_ntoa(client_sockaddr_in_old.sin_addr), sizeof(ip_old) - 1);
+                if (strncmp(ip_new, ip_old, sizeof(ip_new)) == 0){
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] This message was sent from %-s cyclic & rapidly, so rejected\n", getpid(), inet_ntoa(client_sockaddr_in.sin_addr));
+        
+                    bzero(client_buf, BUF_LEN);
+                    strncpy(client_buf, "421 Service not available, closing transmission channel\r\n", sizeof(client_buf) - 1);
+                    if (sock_write(socket_rw_client, client_buf, strlen(client_buf)) < 0){
+                        syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in cyclic check\n", getpid());
+                    }
+                    close(socket_rw_client);
+                    socket_rw_client = -1;
+                }
             }
-    
-            close(socket_accept_client);
-            communicate_smtpdaemon(smtp_hostname, smtp_port, socket_rw_client, ptr_tv, filter, &client_sockaddr_in);
-            exit(0);
+        }
+        memcpy(&client_sockaddr_in_old, &client_sockaddr_in, sizeof(client_sockaddr_in_old));
+        memcpy(&tv_acc_old, &tv_acc, sizeof(tv_acc_old));
+
+/*
+ * call child routine
+ */
+        if (socket_rw_client == -1){
+            /* do nothing */
         }else{
-            ChildCount++;
-            close(socket_rw_client);
+            if (fork() == 0){
+    
+                left_sleep = sleep(delay_sec);
+                while (left_sleep > 0){
+                    left_sleep = sleep(left_sleep);
+                }
+        
+                close(socket_accept_client);
+                communicate_smtpdaemon(smtp_hostname, smtp_port, socket_rw_client, ptr_tv, filter, &client_sockaddr_in);
+                exit(0);
+            }else{
+                ChildCount++;
+                close(socket_rw_client);
+            }
         }
 /*
  * accept client
@@ -436,6 +504,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
     struct timeval tv;
 
 /*
+ * child logging start
+ */
+    syslog(LOG_MAIL|LOG_INFO, "[%d] smtp_wrapper child start : SW_FROM_IP=%-s\n", getpid(), inet_ntoa(csa->sin_addr));
+
+/*
  * open socket to smtp daemon
  */
     if ((socket_rw_smtpdaemon = open_rw_socket_for_server(hostname, port)) == -1){
@@ -462,9 +535,13 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
         if (smtp_status == SS_INITMSG){
             sw_fd_r_filter = 0;
             sw_socket_rw_smtpdaemon = 1;
-            sw_socket_rw_client = 0;
+            sw_socket_rw_client = 1;
         }else if (smtp_status == SS_RECVCOM){
+#if 0 /* funny wait happen. why ? */
+            sw_fd_r_filter = 1;
+#else
             sw_fd_r_filter = 0;
+#endif
             sw_socket_rw_smtpdaemon = 0;
             sw_socket_rw_client = 1;
         }else if (smtp_status == SS_RESNORM){
@@ -569,7 +646,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
 
             bzero(client_buf, BUF_LEN);
             strncpy(client_buf, "451 Requested action aborted: local error in processing(1 select timeout)\r\n", sizeof(client_buf) - 1);
-            ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf));
+            if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                close(socket_rw_client);
+                socket_rw_client = -1;
+                syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in processing(1 select timeout)\n", getpid());
+            }
 
             syslog(LOG_MAIL|LOG_INFO, "[%d] 451 Requested action aborted: local error in processing(1 select timeout)\n", getpid());
 
@@ -582,6 +663,20 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
         }
 
         if (smtp_status == SS_INITMSG){
+
+            if (FD_ISSET(socket_rw_client, &fdset) || read_client_buf[0] != '\0'){
+                bzero(client_buf, BUF_LEN);
+                strncpy(client_buf, "450 This message was rejected according to site policy(1)\r\n", sizeof(client_buf) - 1);
+                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_INITMSG\n", getpid());
+                }
+                close(socket_rw_client);
+                socket_rw_client = -1;
+
+                syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was rejected according to site policy(1)\n", getpid());
+
+                smtp_status = SS_EXIT;
+            }
 
             if (FD_ISSET(socket_rw_smtpdaemon, &fdset) || read_smtpdaemon_buf[0] != '\0'){
                 bzero(smtpdaemon_buf, BUF_LEN);
@@ -670,7 +765,7 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
                     if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
                         close(socket_rw_client);
                         socket_rw_client = -1;
-                        syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RECVCOM\n", getpid());
+                        syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RECVCOM(1)\n", getpid());
                     }
 
                     smtp_status = SS_RECVMSG;
@@ -685,6 +780,18 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
                     }
                     smtp_status = SS_RESQUIT;
 
+                }else if (string_compare(client_buf, "EHLO ", strlen("EHLO ")) == 0){
+
+                    bzero(client_buf, BUF_LEN);
+                    strncpy(client_buf, "504 Command parameter not implemented.\r\n", sizeof(client_buf) - 1);
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                        close(socket_rw_client);
+                        socket_rw_client = -1;
+                        syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RECVCOM(2)\n", getpid());
+                    }
+
+                    smtp_status = SS_RECVCOM;
+
                 }else{
 
                     if ((ret_smtpdaemon = sock_write(socket_rw_smtpdaemon, client_buf, strlen(client_buf))) < 0){
@@ -696,6 +803,28 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
 
                 }
             }
+
+#if 0 /* funny wait happen. why ? */
+            if (FD_ISSET(fd_r_filter, &fdset) || read_filter_buf[0] != '\0'){
+                bzero(filter_buf, BUF_LEN);
+                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf)) < 0){
+                    close(fd_r_filter);
+                    fd_r_filter = -1;
+                }
+
+                bzero(client_buf, BUF_LEN);
+                strncpy(client_buf, "450 This message was accepted partly, but it was rejected according to site policy(2)\r\n", sizeof(client_buf) - 1);
+                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    close(socket_rw_client);
+                    socket_rw_client = -1;
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RECVMSG\n", getpid());
+                }
+
+                syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was accepted partly, but it was rejected according to site policy(2) filter return=(%-s)\n", getpid(), filter_buf);
+
+                smtp_status = SS_EXIT;
+            }
+#endif
 
         }else if (smtp_status == SS_RESNORM){
 
@@ -764,13 +893,20 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
 
             if (FD_ISSET(fd_r_filter, &fdset) || read_filter_buf[0] != '\0'){
                 bzero(filter_buf, BUF_LEN);
-                ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf);
+                if ((ret_filter = sock_read(fd_r_filter, filter_buf, BUF_LEN - 1, read_filter_buf)) < 0){
+                    close(fd_r_filter);
+                    fd_r_filter = -1;
+                }
 
                 bzero(client_buf, BUF_LEN);
-                strncpy(client_buf, "450 This message was accepted partly but it looks like spam, rejected(2)\r\n", sizeof(client_buf) - 1);
-                ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf));
+                strncpy(client_buf, "450 This message was accepted partly, but it was rejected according to site policy(3)\r\n", sizeof(client_buf) - 1);
+                if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                    close(socket_rw_client);
+                    socket_rw_client = -1;
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RECVMSG\n", getpid());
+                }
 
-                syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was accepted partly but it looks like spam, rejected(2) filter return=(%-s)\n", getpid(), filter_buf);
+                syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was accepted partly, but it was rejected according to site policy(3) filter return=(%-s)\n", getpid(), filter_buf);
 
                 smtp_status = SS_EXIT;
             }
@@ -794,14 +930,14 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
                     smtp_status = SS_RESDATA;
                 }else{
                     bzero(client_buf, BUF_LEN);
-                    strncpy(client_buf, "450 This message was accepted all but it looks like spam, rejected(3)\r\n", sizeof(client_buf) - 1);
+                    strncpy(client_buf, "450 This message was accepted all, but it was rejected according to site policy(4)\r\n", sizeof(client_buf) - 1);
                     if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
                         close(socket_rw_client);
                         socket_rw_client = -1;
                         syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_CHKMSG\n", getpid());
                     }
 
-                    syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was accepted all but it looks like spam, rejected(3) filter return=(%-s)\n", getpid(), filter_buf);
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] 450 This message was accepted all, but it was rejected according to site policy(4) filter return=(%-s)\n", getpid(), filter_buf);
 
                     smtp_status = SS_EXIT;
                 }
@@ -820,9 +956,13 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
                 }else{
                     bzero(client_buf, BUF_LEN);
                     strncpy(client_buf, "451 server error, rejected(4)\r\n", sizeof(client_buf) - 1);
-                    ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf));
+                    if ((ret_client = sock_write(socket_rw_client, client_buf, strlen(client_buf))) < 0){
+                        close(socket_rw_client);
+                        socket_rw_client = -1;
+                        syslog(LOG_MAIL|LOG_INFO, "[%d] sock_write socket_rw_client error in SS_RESDATA\n", getpid());
+                    }
 
-                    syslog(LOG_MAIL|LOG_INFO, "[%d] 451 server error, rejected(4)\n", getpid());
+                    syslog(LOG_MAIL|LOG_INFO, "[%d] 451 server error, rejected(4)[%-s]\n", getpid(), smtpdaemon_buf);
 
                     smtp_status = SS_EXIT;
                 }
@@ -891,6 +1031,11 @@ int communicate_smtpdaemon(hostname, port, socket_rw_client, ptr_tv, filter, csa
     close(fd_r_filter);
     close(fd_w_filter);
 
+/*
+ * child logging end
+ */
+    syslog(LOG_MAIL|LOG_INFO, "[%d] smtp_wrapper child end   : SW_FROM_IP=%-s\n", getpid(), inet_ntoa(csa->sin_addr));
+
     return 0;
 }
 
@@ -945,7 +1090,7 @@ int  sock_read(s, buf, len, read_buf)
     if (strchr(read_buf, '\n') == (char *)NULL){
 
         errno = 0;
-        read_len = BUF_LEN - strlen(read_buf) - 1;
+        read_len = (RW_LEN < (BUF_LEN - strlen(read_buf) - 1) ? RW_LEN : (BUF_LEN - strlen(read_buf) - 1));
         ret = read(s, strchr(read_buf, '\0'), read_len);
 
         while ((ret > 0 || (ret < 0 && errno == EINTR)) &&
@@ -953,9 +1098,7 @@ int  sock_read(s, buf, len, read_buf)
                 strchr(read_buf, '\n') == (char *)NULL){
 
             errno = 0;
-            if (ret > 0){
-                read_len -= ret;
-            }
+            read_len = (RW_LEN < (BUF_LEN - strlen(read_buf) - 1) ? RW_LEN : (BUF_LEN - strlen(read_buf) - 1));
             ret = read(s, strchr(read_buf, '\0'), read_len);
         }
     }
@@ -1044,15 +1187,16 @@ int string_compare(str1, str2, len)
 int show_help()
 {
     fprintf(stderr, "Usage : smtp_wrapper [-mh hostname] [-mp port] [-q backlog] [-sh smtpserver_hostname] [-sp smtpserver_port] [-t timeout_sec] [-d delay_sec] [-f filter] [-cm child_max] [-F]\n");
-    fprintf(stderr, "  -mh hostname            : my hostname [ANY]\n");
-    fprintf(stderr, "  -mp port                : my port [25]\n");
-    fprintf(stderr, "  -q  backlog             : socket queue number [5]\n");
-    fprintf(stderr, "  -sh smtpserver_hostname : real smtp hostname [localhost]\n");
-    fprintf(stderr, "  -sp smtpserver_port     : real smtp port [8025]\n");
-    fprintf(stderr, "  -t  timeout_sec         : timeout second [no timeout]\n");
-    fprintf(stderr, "  -d  delay_sec           : delay second for initial connection [0]\n");
-    fprintf(stderr, "  -f  filter              : filter program [/usr/local/smtp_wrapper/smtp_filter]\n");
-    fprintf(stderr, "  -cm child_max           : max number of connection to real smtp daemon [10]\n");
-    fprintf(stderr, "  -F                      : run in foreground\n");
+    fprintf(stderr, "  -mh hostname             : my hostname [ANY]\n");
+    fprintf(stderr, "  -mp port                 : my port [25]\n");
+    fprintf(stderr, "  -q  backlog              : socket queue number [5]\n");
+    fprintf(stderr, "  -sh smtpserver_hostname  : real smtp hostname [localhost]\n");
+    fprintf(stderr, "  -sp smtpserver_port      : real smtp port [8025]\n");
+    fprintf(stderr, "  -t  timeout_sec          : timeout second [no timeout]\n");
+    fprintf(stderr, "  -d  delay_sec            : delay second for initial connection(greeting message) [0]\n");
+    fprintf(stderr, "  -f  filter               : filter program [/usr/local/smtp_wrapper/smtp_filter]\n");
+    fprintf(stderr, "  -cm child_max            : max number of connection to real smtp daemon [10]\n");
+    fprintf(stderr, "  -i  minimum_interval_sec : minimum interval second of connection from same ip address [0]\n");
+    fprintf(stderr, "  -F                       : run in foreground\n");
     return 0;
 }

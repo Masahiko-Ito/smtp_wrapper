@@ -1,5 +1,7 @@
 #! /bin/ash
 #
+# This part of smtp_wrapper-0.2 is distributed under GNU General Public License.
+#
 # Sample null filter script
 #   by "Masahiko Ito" <m-ito@mbox.kyoto-inet.or.jp>
 #

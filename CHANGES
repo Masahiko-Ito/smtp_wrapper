@@ -1,0 +1,13 @@
+2005/11/25
+ o Develop started
+2006/01/23 Ver. 0.1
+ o First release
+2006/05/15 Ver. 0.2
+ o 450,451 メッセージ内容変更
+ o smtp_wrapper(子)起動／終了時 syslogメッセージ追加
+ o show_retry.sh リトライメール検索スクリプト
+ o EHLO に対しては `504'を返して対応しない(PIPELINING等への対応が難しいので(-.-;)
+ o フィルタ関連をsampleディレクトリに移動
+ o 制御端末の切り離しをまじめにしてみた
+ o ソケットの読み込みブロックを、1回につき16byteに制限した
+ o 同一IPからの連続したアクセスに対して許容する最小間隔を指定できるようにした(-i minimum_interval_sec)

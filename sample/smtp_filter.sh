@@ -1,5 +1,7 @@
 #! /bin/ash
 #
+# This part of smtp_wrapper-0.2 is distributed under GNU General Public License.
+#
 # Sample spam filter script
 #   by "Masahiko Ito" <m-ito@mbox.kyoto-inet.or.jp>
 #
@@ -20,7 +22,7 @@ export PATH
 #
 # smtp_wrapperディレクトリ指定
 #
-smtp_wrapper_dir="/usr/local/smtp_wrapper-0.1"
+smtp_wrapper_dir="/usr/local/smtp_wrapper-0.2"
 #
 # テンポラリスプールディレクトリ
 tmp="/var/tmp"
@@ -45,8 +47,8 @@ relay_allow_address="/etc/mail/local-host-names"
 #
 # ある種の定数
 #
-cr=''; export cr
-tab='	'; export tab
+cr=`awk 'BEGIN{printf "\r"}'`; export cr
+tab=`awk 'BEGIN{printf "\t"}'`; export tab
 pid="$$"; export pid
 #============================================================
 #
