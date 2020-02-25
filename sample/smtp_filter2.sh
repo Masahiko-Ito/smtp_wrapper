@@ -166,11 +166,13 @@ awk 'BEGIN{
 
     if (out_sw == 1){
         print $0;
+	fflush()
     }
 }
 END{
     if (out_sw == 0){
         printf("[%d]:IP=%-s HOST=%-s REASON=NOT spam, but NO DATA\n", pid, from_ip, from_hostname)
+	fflush()
     }
 }' ${tmp}/smtp_filter2.1.$$.tmp
 #

@@ -1228,6 +1228,7 @@ int  sock_read(s, buf, len, read_buf, ptr_tv)
 {
     int ret, read_len, return_len;
     char *ptr_lf, *ptr_null;
+    char tmp_buf[BUF_LEN];
 
     if (strchr(read_buf, '\n') == (char *)NULL){
 
@@ -1273,7 +1274,8 @@ int  sock_read(s, buf, len, read_buf, ptr_tv)
             strncpy(buf, read_buf, return_len);
 
             ptr_null = strchr(read_buf, '\0');
-            strncpy(read_buf, (ptr_lf + 1), ptr_null - ptr_lf);
+            strncpy(tmp_buf, (ptr_lf + 1), ptr_null - ptr_lf);
+            strncpy(read_buf, tmp_buf, ptr_null - ptr_lf);
             ptr_null = strchr(read_buf, '\0');
             bzero(ptr_null + 1, BUF_LEN - (ptr_null - read_buf + 1));
         }
