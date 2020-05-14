@@ -9,8 +9,8 @@
 PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"; export PATH
 #-----------------------------------------------------------------
 #
-# smtp_filter2.sh¤ËµñÈİ¤µ¤ì¤Æ¤¤¤ëIP¤ÎÆâ¡¢¥ê¥È¥é¥¤¤·¤Æ¤¤¤ëÊª¤òÉ½¼¨
-# ¤¹¤ë¡£
+# smtp_filter2.shã«æ‹’å¦ã•ã‚Œã¦ã„ã‚‹IPã®å†…ã€ãƒªãƒˆãƒ©ã‚¤ã—ã¦ã„ã‚‹ç‰©ã‚’è¡¨ç¤º
+# ã™ã‚‹ã€‚
 #
 date=`date +'%b %d' | sed -e 's/  *0/ /'`
 #

@@ -7,16 +7,16 @@
 #
 # Thanks to http://www.gabacho-net.jp/anti-spam/anti-spam-system.html
 #
-# •≥•Û•∆•Û•ƒ§À¬–§π§Î•¡•ß•√•Ø(¬Ëª∞º‘•Í•Ï°º)§Úπ‘§¶æÏπÁ§Œ•π•Ø•Í•◊•»°£`-f'•™•◊•∑•Á•Û§ÀªÿƒÍ§π§Î°£
+# „Ç≥„É≥„ÉÜ„É≥„ÉÑ„Å´ÂØæ„Åô„Çã„ÉÅ„Çß„ÉÉ„ÇØ(Á¨¨‰∏âËÄÖ„É™„É¨„Éº)„ÇíË°å„ÅÜÂ†¥Âêà„ÅÆ„Çπ„ÇØ„É™„Éó„Éà„ÄÇ`-f'„Ç™„Éó„Ç∑„Éß„É≥„Å´ÊåáÂÆö„Åô„Çã„ÄÇ
 #
 #============================================================
 #
-# ≥‰§Íπ˛§ﬂª˛§ŒΩËÕ˝¿ﬂƒÍ
+# Ââ≤„ÇäËæº„ÅøÊôÇ„ÅÆÂá¶ÁêÜË®≠ÂÆö
 #
 trap "spam_exit 1 \"kill by signal\"" INT HUP TERM QUIT
 #============================================================
 #
-# º¬π‘•—•π¿ﬂƒÍ
+# ÂÆüË°å„Éë„ÇπË®≠ÂÆö
 #
 PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
 export PATH
@@ -28,30 +28,30 @@ export PATH
 #(sleep ${timeout}; kill -15 ${PPID}) &
 #============================================================
 #
-# smtp_wrapper•«•£•Ï•Ø•»•ÍªÿƒÍ
+# smtp_wrapper„Éá„Ç£„É¨„ÇØ„Éà„É™ÊåáÂÆö
 #
 smtp_wrapper_dir="/usr/local/smtp_wrapper"
 #
-# •∆•Û•›•È•Í•π•◊°º•Î•«•£•Ï•Ø•»•Í
+# „ÉÜ„É≥„Éù„É©„É™„Çπ„Éó„Éº„É´„Éá„Ç£„É¨„ÇØ„Éà„É™
 tmp="/var/tmp"
 #
-# syslogΩ–Œœª˛§ŒID
+# syslogÂá∫ÂäõÊôÇ„ÅÆID
 sl_ident="smtp_filter2"
 #
-# ¡¥§∆§Œ•Í•Ï°º§Úµˆ≤ƒ§π§Î•€•π•»§ŒIP•«°º•ø•Ÿ°º•π
+# ÂÖ®„Å¶„ÅÆ„É™„É¨„Éº„ÇíË®±ÂèØ„Åô„Çã„Éõ„Çπ„Éà„ÅÆIP„Éá„Éº„Çø„Éô„Éº„Çπ
 relay_allow_host="${smtp_wrapper_dir}/relay_allow_host_db"
-# ≥∞…Ù§Œ•µ°º•–§Àµˆ≤ƒ§π§Î«€¡˜¿Ë•¢•…•Ï•π•«°º•ø•Ÿ°º•π
+# Â§ñÈÉ®„ÅÆ„Çµ„Éº„Éê„Å´Ë®±ÂèØ„Åô„ÇãÈÖçÈÄÅÂÖà„Ç¢„Éâ„É¨„Çπ„Éá„Éº„Çø„Éô„Éº„Çπ
 relay_allow_address="${smtp_wrapper_dir}/relay_allow_address_db"
 #============================================================
 #
-# §¢§ÎºÔ§ŒƒÍøÙ
+# „ÅÇ„ÇãÁ®Æ„ÅÆÂÆöÊï∞
 #
 cr=`echo -n -e '\r'`; export cr
 tab=`echo -n -e '\t'`; export tab
 pid="$$"; export pid
 #============================================================
 #
-# spam§»»Ω√«ª˛§ÀΩ™Œª§µ§ª§ÎΩËÕ˝
+# spam„Å®Âà§Êñ≠ÊôÇ„Å´ÁµÇ‰∫Ü„Åï„Åõ„ÇãÂá¶ÁêÜ
 #
 spam_exit ()
 {
@@ -71,7 +71,7 @@ spam_exit ()
 }
 #============================================================
 #
-# ¬Ëª∞º‘•Í•Ï°º•¡•ß•√•ØΩËÕ˝
+# Á¨¨‰∏âËÄÖ„É™„É¨„Éº„ÉÅ„Çß„ÉÉ„ÇØÂá¶ÁêÜ
 #
 relay_check ()
 {
@@ -113,47 +113,69 @@ relay_check ()
 			done
 			if [ "X${allow_rcpt}" = "X" ]
 			then
-				spam_exit 12 "no relay" # *** ¬Ëª∞º‘√Ê∑—µÒ»› ***
+				spam_exit 12 "no relay" # *** Á¨¨‰∏âËÄÖ‰∏≠Á∂ôÊãíÂê¶ ***
 			fi
 		done
 	fi
 }
 #============================================================
 #
-# ºÁΩËÕ˝≥´ªœ
+# ‰∏ªÂá¶ÁêÜÈñãÂßã
 #
 from_ip=""
 from_hostname=""
+my_ip=""
+my_hostname=""
+my_localhostname=""
 #
 #============================================================
 #
-# •·°º•ÎÀ‹ ∏§Ú¡¥ ∏ºıøÆ(•π•◊°º•Î)§π§Î
+# „É°„Éº„É´Êú¨Êñá„ÇíÂÖ®ÊñáÂèó‰ø°(„Çπ„Éó„Éº„É´)„Åô„Çã
 #
 cat >${tmp}/smtp_filter2.1.$$.tmp
 #============================================================
 #
-# ¬Ëª∞º‘√Ê∑—µÒ»›
+# Á¨¨‰∏âËÄÖ‰∏≠Á∂ôÊãíÂê¶
 #
 from_ip=${SW_FROM_IP}
 from_hostname=`host ${from_ip} 2>/dev/null |\
 	egrep 'domain name pointer' |\
 	head -1 |\
 	sed -e 's/^.* domain name pointer *//;s/\.$//'`
+my_ip=`/sbin/ifconfig eth0 |\
+	egrep ' inet ' |\
+	head -1 |\
+	tr -s ' ' |\
+	cut -d ' ' -f 3`
+my_hostname=`host ${my_ip} 2>/dev/null |\
+	egrep 'domain name pointer' |\
+	head -1 |\
+	sed -e 's/^.* domain name pointer *//;s/\.$//'`
+my_localhostname=`/bin/hostname -f`
 #
 relay_check
 #
 #============================================================
 #
-# ¿µ≈ˆ§ •·°º•Î§»»Ω√«§µ§Ï§ø§‚§Œ§ÚΩ–Œœ§π§Î
+# Ê≠£ÂΩì„Å™„É°„Éº„É´„Å®Âà§Êñ≠„Åï„Çå„Åü„ÇÇ„ÅÆ„ÇíÂá∫Âäõ„Åô„Çã
 #
 export from_ip
 export from_hostname
+export my_ip
+export my_hostname
+export my_localhostname
 #
 awk 'BEGIN{
     from_ip = ENVIRON["from_ip"]
     from_hostname = ENVIRON["from_hostname"]
+    my_ip = ENVIRON["my_ip"]
+    my_hostname = ENVIRON["my_hostname"]
+    my_localhostname = ENVIRON["my_localhostname"]
     pid = ENVIRON["pid"]
     out_sw = 0;
+    out_received_sw = 1;
+    rcpt_to = "";
+    helo_host = "";
 }
 {
     if (out_sw == 0){
@@ -162,23 +184,35 @@ awk 'BEGIN{
             head ~ /^DATA$/){
             out_sw = 1;
         }
+        if (head ~ /^RCPT *TO:/){
+            split($0, array, /  */);
+            rcpt_to = array[3]
+        }
+        if (head ~ /^HELO / || head ~ /^EHLO /){
+            split($0, array, /  */);
+            helo_host = array[2]
+        }
     }
 
     if (out_sw == 1){
         print $0;
-	fflush()
+        if (out_received_sw == 1){
+            printf("Received: from %s (%s[%s])\r\n\tby %s (%s[%s]) with smtp_wrapper\r\n\tfor %s; %s\r\n", helo_host, from_hostname, from_ip, my_localhostname, my_hostname, my_ip, rcpt_to, strftime("%a, %d %b %Y %H:%M:%S %z (%Z)"))
+            out_received_sw = 0;
+        }
+        fflush();
     }
 }
 END{
     if (out_sw == 0){
         printf("[%d]:IP=%-s HOST=%-s REASON=NOT spam, but NO DATA\n", pid, from_ip, from_hostname)
-	fflush()
+        fflush();
     }
 }' ${tmp}/smtp_filter2.1.$$.tmp
 #
 #============================================================
 #
-# ∏ÂªœÀˆ§∑§∆Ω™Œª
+# ÂæåÂßãÊú´„Åó„Å¶ÁµÇ‰∫Ü
 #
 rm -f ${tmp}/smtp_filter2.*.$$.tmp
 exit 0

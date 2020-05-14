@@ -5,8 +5,8 @@
 # Sample null filter script
 #   by "Masahiko Ito" <m-ito@myh.no-ip.org>
 #
-# smtp_wrapper¥Ç¥Ğ¥Ã¥°ÍÑ
-# Âè»°¼ÔÃæ·Ñ¥Á¥§¥Ã¥¯¤¹¤é¤·¤Æ¤Ê¤¤¤Î¤ÇÃí°Õ
+# smtp_wrapperãƒ‡ãƒãƒƒã‚°ç”¨
+# ç¬¬ä¸‰è€…ä¸­ç¶™ãƒã‚§ãƒƒã‚¯ã™ã‚‰ã—ã¦ãªã„ã®ã§æ³¨æ„
 #
 #------------------------------------------------------------
 PATH="/usr/local/smtp_wrapper:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
